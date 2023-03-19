@@ -1,0 +1,7 @@
+lightning_fabric==2.0.0
+pytorch_lightning==2.0.0
+regex==2022.10.31
+tokenizers==0.13.2
+torch==1.13.1
+tqdm==4.65.0
+transformers==4.27.1
