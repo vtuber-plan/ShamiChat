@@ -17,16 +17,15 @@ import torch
 from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from shami.lightning.pretrain_shami import PretrainShami
+from shami.light_modules.pretrain_shami import PretrainShami
 from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 
 from shami.data.dataset.jsonl_dataset import JsonlDataset
-from shami.data.dataset.jsonl_gzip_dataset import JsonlGzipDataset
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
+# from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
 
 import lightning_fabric
 
@@ -36,10 +35,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', type=str, default="./checkpoints/Shami-base/config.json", help='JSON file for configuration')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="3", help='training device ids')
+    parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
     parser.add_argument('-s', '--seed', type=int, default=43, help='training seed')
     parser.add_argument('-b', '--batch-size', type=int, default=4, help='training seed')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/Shami-base", help='checkpoint path')
+    parser.add_argument('--fp16', action='store_true', default=False, help='use fp16')
+    parser.add_argument('--bf16', action='store_true', default=False, help='use bf16')
     args = parser.parse_args()
 
     hparams = ShamiConfig.from_json_file(args.config)
@@ -48,8 +49,8 @@ def main():
 
     tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
 
-    train_dataset = JsonlGzipDataset(tokenizer, "./dataset/test.jsonl.gz")
-    valid_dataset = JsonlGzipDataset(tokenizer, "./dataset/test.jsonl.gz")
+    train_dataset = JsonlDataset(tokenizer, "./dataset/test.jsonl")
+    valid_dataset = JsonlDataset(tokenizer, "./dataset/test.jsonl")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=16, shuffle=True, pin_memory=True, collate_fn=collate_fn)
@@ -70,11 +71,12 @@ def main():
     if len(devices) > 1:
         trainer_params["strategy"] = "ddp"
 
-    trainer_params.update(hparams.trainer)
-
-    if hparams.train.fp16_run:
-        trainer_params["amp_backend"] = "native"
-        trainer_params["precision"] = 16
+    if args.fp16:
+        print("using fp16")
+        trainer_params["precision"] = "16-mixed"
+    elif args.bf16:
+        print("using bf16")
+        trainer_params["precision"] = "bf16-mixed"
     
     # profiler = AdvancedProfiler(filename="profile.txt")
     

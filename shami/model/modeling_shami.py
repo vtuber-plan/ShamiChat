@@ -156,9 +156,7 @@ class ShamiLayer(nn.Module):
         self.d_model = config.d_model
         self.head_dim = config.d_model // config.n_heads
         self.attention = ShamiAttention(config)
-        self.feed_forward = ShamiFeedForward(
-            dim=config.d_model, hidden_dim=4 * config.d_model, multiple_of=config.multiple_of
-        )
+        self.feed_forward = ShamiFeedForward(config)
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(config.d_model, eps=config.norm_eps)
         self.ffn_norm = RMSNorm(config.d_model, eps=config.norm_eps)
@@ -179,6 +177,7 @@ class ShamiModel(PreTrainedModel):
         self.vocab_size: int = config.vocab_size  # defined later by tokenizer
         self.multiple_of: int = config.multiple_of  # make SwiGLU hidden layer size multiple of large power of 2
         self.norm_eps: float = config.norm_eps
+        self.max_seq_len: int = config.max_seq_len
 
         self.word_embedding = nn.Embedding(self.vocab_size, self.d_model)
 
@@ -312,6 +311,9 @@ class ShamiLMHeadModel(ShamiModel):
 
     def __init__(self, config):
         super().__init__(config)
+        self.lm_model = ShamiModel(config=config)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=True)
+
 
     def forward(
         self,

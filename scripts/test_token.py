@@ -1,3 +1,10 @@
+import sys
+import os
+
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
+)
+
 from shami.model.tokenization_shami import ShamiTokenizer
 from shami.model.tokenization_shami_fast import  ShamiTokenizerFast
 

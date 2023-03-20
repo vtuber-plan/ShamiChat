@@ -16,8 +16,7 @@ class PretrainShami(pl.LightningModule):
     def __init__(self, config: ShamiConfig) -> None:
         super().__init__()
         self.config = config
-        self.lm_model = ShamiLMHeadModel(config)
-        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=True)
+        self.net = ShamiLMHeadModel(config)
 
     def forward(self, source_tokens: Dict[str, torch.Tensor], target_tokens: Dict[str, torch.Tensor]):
         inputs, labels = source_tokens, target_tokens

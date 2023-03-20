@@ -31,7 +31,6 @@ class ShamiConfig(PretrainedConfig):
         vocab_size: int,
         multiple_of: int,
         norm_eps: float,
-        max_batch_size: int,
         max_seq_len: int,
         bos_token_id: int,
         pad_token_id: int,
@@ -45,7 +44,6 @@ class ShamiConfig(PretrainedConfig):
         self.vocab_size = vocab_size
         self.multiple_of = multiple_of
         self.norm_eps = norm_eps
-        self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
         self.bos_token_id = bos_token_id
         self.pad_token_id = pad_token_id
