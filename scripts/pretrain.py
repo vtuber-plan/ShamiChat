@@ -22,6 +22,7 @@ from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 
 from shami.data.dataset.jsonl_dataset import JsonlDataset
+from shami.hparams import HParams
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -34,16 +35,16 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorWithPaddin
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', type=str, default="./checkpoints/Shami-base/config.json", help='JSON file for configuration')
+    parser.add_argument('-p', '--params', type=str, default="./configs/shami-base.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
     parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
     parser.add_argument('-s', '--seed', type=int, default=43, help='training seed')
     parser.add_argument('-b', '--batch-size', type=int, default=4, help='training seed')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/Shami-base", help='checkpoint path')
-    parser.add_argument('--fp16', action='store_true', default=False, help='use fp16')
-    parser.add_argument('--bf16', action='store_true', default=False, help='use bf16')
     args = parser.parse_args()
 
-    hparams = ShamiConfig.from_json_file(args.config)
+    config = ShamiConfig.from_json_file(args.config)
+    hparams = HParams.from_json_file(args.params)
 
     lightning_fabric.utilities.seed.seed_everything(args.seed)
 
@@ -56,7 +57,7 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=16, shuffle=True, pin_memory=True, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=1, num_workers=16, shuffle=False, pin_memory=True, collate_fn=collate_fn)
 
-    model = PretrainShami(hparams)
+    model = PretrainShami(config, hparams)
     checkpoint_callback = ModelCheckpoint(dirpath=None, save_last=True, every_n_train_steps=2000)
 
     devices = [int(n.strip()) for n in args.device.split(",")]
@@ -71,10 +72,10 @@ def main():
     if len(devices) > 1:
         trainer_params["strategy"] = "ddp"
 
-    if args.fp16:
+    if hparams.train.fp16:
         print("using fp16")
         trainer_params["precision"] = "16-mixed"
-    elif args.bf16:
+    elif hparams.train.bf16:
         print("using bf16")
         trainer_params["precision"] = "bf16-mixed"
     

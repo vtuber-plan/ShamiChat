@@ -8,15 +8,17 @@ from torch.nn import functional as F
 
 import pytorch_lightning as pl
 
+from .. import hparams
 from ..model.configuration_shami import ShamiConfig
-
 from ..model.modeling_shami import ShamiModel, ShamiLMHeadModel
 
 class PretrainShami(pl.LightningModule):
-    def __init__(self, config: ShamiConfig) -> None:
+    def __init__(self, config: ShamiConfig, params: hparams) -> None:
         super().__init__()
         self.config = config
+        self.params = params
         self.net = ShamiLMHeadModel(config)
+        self.save_hyperparameters(ignore=["config"])
 
     def forward(self, source_tokens: Dict[str, torch.Tensor], target_tokens: Dict[str, torch.Tensor]):
         inputs, labels = source_tokens, target_tokens
@@ -98,10 +100,10 @@ class PretrainShami(pl.LightningModule):
     def configure_optimizers(self):
         self.optim = torch.optim.AdamW(
             self.net.parameters(), 
-            self.hparams.train.learning_rate, 
-            betas=self.hparams.train.betas, 
-            eps=self.hparams.train.eps)
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=self.hparams.train.lr_decay)
+            self.hparams.params.train.learning_rate, 
+            betas=self.hparams.params.train.betas, 
+            eps=self.hparams.params.train.eps)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=self.hparams.params.train.lr_decay)
         self.scheduler.last_epoch = self.current_epoch - 1
 
         return [self.optim], [self.scheduler]
