@@ -17,52 +17,38 @@ class PretrainShami(pl.LightningModule):
         super().__init__()
         self.config = config
         self.params = params
+
+        self.pad_token_id = self.config.pad_token_id
+        self.vocab_size = self.config.vocab_size
+
         self.net = ShamiLMHeadModel(config)
         self.save_hyperparameters(ignore=["config"])
 
-    def forward(self, source_tokens: Dict[str, torch.Tensor], target_tokens: Dict[str, torch.Tensor]):
-        inputs, labels = source_tokens, target_tokens
-
-        input_ids, input_mask = inputs["token_ids"], inputs["mask"]
-        label_ids, label_mask = labels["token_ids"], labels["mask"]
-
+    def forward(self, tokens: Dict[str, torch.Tensor]):
+        input_ids, input_mask = tokens["input_ids"], tokens["attention_mask"]
         batch_size = input_ids.shape[0]
 
-        # in lightning, forward defines the prediction/inference actions
-        transformer_outputs = self.lm_model(
+        lm_logits = self.net(
             input_ids=input_ids,
             attention_mask=input_mask,
-            decoder_input_ids=label_ids,
-            decoder_attention_mask=label_mask,
             use_cache=False,
         )
-        # (batch_size, sequence_length, hidden_size)
-        hidden_states = transformer_outputs.last_hidden_state
-        # (batch_size, sequence_length, vocab_size)
-        lm_logits = self.lm_head(hidden_states)
-
         return lm_logits
 
     def training_step(self, batch, batch_idx: int):
-        inputs, labels = batch
-
-        input_ids, input_mask = inputs["token_ids"], inputs["mask"]
-        label_ids, label_mask = labels["token_ids"], labels["mask"]
+        input_ids, input_mask = batch["input_ids"], batch["attention_mask"]
 
         batch_size = input_ids.shape[0]
+        source_tokens = {
+            'input_ids': input_ids[..., :-1],
+            'attention_mask': input_mask[..., :-1]
+        }
 
         lm_logits = self.forward(
-            source_tokens={
-                'token_ids': input_ids,
-                'mask': input_mask
-            },
-            target_tokens={
-                'token_ids': label_ids[..., :-1],
-                'mask': label_mask[..., :-1]
-            }
+            tokens=source_tokens,
         )
 
-        shift_label_ids = label_ids[..., 1:].contiguous()
+        shift_label_ids = input_ids[..., 1:].contiguous()
 
         loss_fct = torch.nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         loss = loss_fct(lm_logits.view(-1, self.vocab_size), shift_label_ids.view(-1))
@@ -72,25 +58,19 @@ class PretrainShami(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels = batch
-
-        input_ids, input_mask = inputs["token_ids"], inputs["mask"]
-        label_ids, label_mask = labels["token_ids"], labels["mask"]
+        input_ids, input_mask = batch["input_ids"], batch["attention_mask"]
 
         batch_size = input_ids.shape[0]
+        source_tokens = {
+            'input_ids': input_ids[..., :-1],
+            'attention_mask': input_mask[..., :-1]
+        }
 
         lm_logits = self.forward(
-            source_tokens={
-                'token_ids': input_ids,
-                'mask': input_mask
-            },
-            target_tokens={
-                'token_ids': label_ids[..., :-1],
-                'mask': label_mask[..., :-1]
-            }
+            tokens=source_tokens
         )
 
-        shift_label_ids = label_ids[..., 1:].contiguous()
+        shift_label_ids = input_ids[..., 1:].contiguous()
 
         loss_fct = torch.nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         loss = loss_fct(lm_logits.view(-1, self.vocab_size), shift_label_ids.view(-1))

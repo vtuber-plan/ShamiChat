@@ -17,9 +17,12 @@ import torch
 from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+torch.set_float32_matmul_precision('medium')
+
 from shami.light_modules.pretrain_shami import PretrainShami
 from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
+from shami.model.tokenization_shami import ShamiTokenizer
 
 from shami.data.dataset.jsonl_dataset import JsonlDataset
 from shami.hparams import HParams
@@ -39,7 +42,7 @@ def main():
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
     parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
     parser.add_argument('-s', '--seed', type=int, default=43, help='training seed')
-    parser.add_argument('-b', '--batch-size', type=int, default=4, help='training seed')
+    parser.add_argument('-b', '--batch-size', type=int, default=1, help='training seed')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/Shami-base", help='checkpoint path')
     args = parser.parse_args()
 
@@ -48,14 +51,14 @@ def main():
 
     lightning_fabric.utilities.seed.seed_everything(args.seed)
 
-    tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
+    tokenizer = ShamiTokenizer.from_pretrained(args.checkpoint)
 
     train_dataset = JsonlDataset(tokenizer, "./dataset/test.jsonl")
     valid_dataset = JsonlDataset(tokenizer, "./dataset/test.jsonl")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=16, shuffle=True, pin_memory=True, collate_fn=collate_fn)
-    valid_loader = DataLoader(valid_dataset, batch_size=1, num_workers=16, shuffle=False, pin_memory=True, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True, pin_memory=True, collate_fn=collate_fn)
+    valid_loader = DataLoader(valid_dataset, batch_size=1, num_workers=4, shuffle=False, pin_memory=True, collate_fn=collate_fn)
 
     model = PretrainShami(config, hparams)
     checkpoint_callback = ModelCheckpoint(dirpath=None, save_last=True, every_n_train_steps=2000)

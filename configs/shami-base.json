@@ -5,6 +5,7 @@
         "eps": 1e-9,
         "lr_decay": 0.999875,
         "fp16": true,
-        "bf16": false
+        "bf16": false,
+        "max_epochs": 1000
     }
 }

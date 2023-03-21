@@ -77,13 +77,13 @@ def apply_rotary_emb(
 @dataclass
 class ShamiModelOutput(ModelOutput):
     last_hidden_state: torch.FloatTensor
-    mems: Optional[List[torch.FloatTensor]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 class ShamiAttention(nn.Module):
     def __init__(self, config: ShamiConfig):
         super().__init__()
+        self.n_heads = config.n_heads
         self.head_dim = config.d_model // config.n_heads
 
         self.wq = nn.Linear(config.d_model, config.n_heads * self.head_dim, bias=False)
@@ -98,24 +98,27 @@ class ShamiAttention(nn.Module):
         #     (config.max_batch_size, config.max_seq_len, self.n_local_heads, self.head_dim)
         # ).cuda()
 
-    def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
-        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
-        xk = xk.view(bsz, seqlen, self.n_local_heads, self.head_dim)
-        xv = xv.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
+        xk = xk.view(bsz, seqlen, self.n_heads, self.head_dim)
+        xv = xv.view(bsz, seqlen, self.n_heads, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-        self.cache_k = self.cache_k.to(xq)
-        self.cache_v = self.cache_v.to(xq)
+        # self.cache_k = self.cache_k.to(xq)
+        # self.cache_v = self.cache_v.to(xq)
 
-        self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-        self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+        # self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+        # self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
 
-        keys = self.cache_k[:bsz, : start_pos + seqlen]
-        values = self.cache_v[:bsz, : start_pos + seqlen]
+        # keys = self.cache_k[:bsz, : start_pos + seqlen]
+        # values = self.cache_v[:bsz, : start_pos + seqlen]
+
+        keys = xk
+        values = xv
 
         xq = xq.transpose(1, 2)
         keys = keys.transpose(1, 2)
@@ -161,8 +164,8 @@ class ShamiLayer(nn.Module):
         self.attention_norm = RMSNorm(config.d_model, eps=config.norm_eps)
         self.ffn_norm = RMSNorm(config.d_model, eps=config.norm_eps)
 
-    def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
-        h = x + self.attention.forward(self.attention_norm(x), start_pos, freqs_cis, mask)
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
+        h = x + self.attention.forward(self.attention_norm(x), freqs_cis, mask)
         out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out
 
@@ -190,6 +193,7 @@ class ShamiModel(PreTrainedModel):
         self.freqs_cis = precompute_freqs_cis(
             self.d_model // self.n_heads, self.max_seq_len * 2
         )
+        self.freqs_cis_device_mapping = {}
 
         self.post_init()
 
@@ -199,7 +203,6 @@ class ShamiModel(PreTrainedModel):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
@@ -213,97 +216,38 @@ class ShamiModel(PreTrainedModel):
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        use_cache = use_cache if use_cache is not None else False
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-        elif input_ids is not None:
-            input_shape = input_ids.size()
-            input_ids = input_ids.view(-1, input_shape[-1])
-            batch_size = input_ids.shape[0]
-        elif inputs_embeds is not None:
-            input_shape = inputs_embeds.size()[:-1]
-            batch_size = inputs_embeds.shape[0]
-        else:
-            raise ValueError("You have to specify either input_ids or inputs_embeds")
-
-        device = input_ids.device if input_ids is not None else inputs_embeds.device
-
-        if token_type_ids is not None:
-            token_type_ids = token_type_ids.view(-1, input_shape[-1])
-        if position_ids is not None:
-            position_ids = position_ids.view(-1, input_shape[-1])
-
-        if past_key_values is None:
-            past_length = 0
-            past_key_values = tuple([None] * len(self.h))
-        else:
-            past_length = past_key_values[0][0].size(-2)
-        if position_ids is None:
-            position_ids = torch.arange(past_length, input_shape[-1] + past_length, dtype=torch.long, device=device)
-            position_ids = position_ids.unsqueeze(0).view(-1, input_shape[-1])
-
-        # Attention mask.
-        if attention_mask is not None:
-            if batch_size <= 0:
-                raise ValueError("batch_size has to be defined and > 0")
-            attention_mask = attention_mask.view(batch_size, -1)
-            # We create a 3D attention mask from a 2D tensor mask.
-            # Sizes are [batch_size, 1, 1, to_seq_length]
-            # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
-            # this attention mask is more simple than the triangular masking of causal attention
-            # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
-            attention_mask = attention_mask[:, None, None, :]
-
-            # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
-            # masked positions, this operation will create a tensor which is 0.0 for
-            # positions we want to attend and the dtype's smallest value for masked positions.
-            # Since we are adding it to the raw scores before the softmax, this is
-            # effectively the same as removing these entirely.
-            attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
-            attention_mask = (1.0 - attention_mask) * torch.finfo(self.dtype).min
-
-        # If a 2D or 3D attention mask is provided for the cross-attention
-        # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
-        if self.config.add_cross_attention and encoder_hidden_states is not None:
-            encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
-            encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
-            if encoder_attention_mask is None:
-                encoder_attention_mask = torch.ones(encoder_hidden_shape, device=device)
-            encoder_attention_mask = self.invert_attention_mask(encoder_attention_mask)
-        else:
-            encoder_attention_mask = None
-
-        # Prepare head mask if needed
-        # 1.0 in head_mask indicate we keep the head
-        # attention_probs has shape bsz x n_heads x N x N
-        # head_mask has shape n_layer x batch x n_heads x N x N
-        head_mask = self.get_head_mask(head_mask, self.config.n_layer)
 
         if inputs_embeds is None:
             inputs_embeds = self.word_embedding(input_ids)
         hidden_states = inputs_embeds
 
-        if token_type_ids is not None:
-            token_type_embeds = self.word_embedding(token_type_ids)
-            hidden_states = hidden_states + token_type_embeds
+        batch_size, seqlen = input_ids.shape
+        start_pos = 0
+        if hidden_states.device not in self.freqs_cis_device_mapping:
+            self.freqs_cis_device_mapping[hidden_states.device] = self.freqs_cis.to(hidden_states.device)
+        freqs_cis = self.freqs_cis_device_mapping[hidden_states.device]
+        freqs_cis = freqs_cis[start_pos: start_pos + seqlen]
 
-        # _bsz, seqlen = input_ids.shape
-        # h = self.word_embedding(input_ids)
-        freqs_cis = self.freqs_cis.to(hidden_states.device)
-        # freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
+        mask = None
+        if seqlen > 1:
+            mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=inputs_embeds.device)
+            mask = torch.triu(mask, diagonal=start_pos + 1).type_as(hidden_states)
 
-        # mask = None
-        # if seqlen > 1:
-        #     mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=tokens.device)
-        #     mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
-
+        all_self_attentions = () if output_attentions else None
+        all_cross_attentions = () if output_attentions else None
+        all_hidden_states = () if output_hidden_states else None
         for layer in self.layers:
-            h = layer(hidden_states, attention_mask, freqs_cis)
-        h = self.norm(h)
-        output = self.output(h[:, -1, :])  # only compute last logits
-        # return output.float()
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+            hidden_states = layer(hidden_states, freqs_cis, mask)
+        h = self.norm(hidden_states)
+        return ShamiModelOutput(
+            last_hidden_state=h,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attentions
+        )
 
 
 class ShamiLMHeadModel(ShamiModel):
@@ -314,12 +258,10 @@ class ShamiLMHeadModel(ShamiModel):
         self.lm_model = ShamiModel(config=config)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=True)
 
-
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None,
         input_mask: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
@@ -329,4 +271,20 @@ class ShamiLMHeadModel(ShamiModel):
         return_dict: Optional[bool] = None,
         **kwargs,
     ) -> Union[Tuple, ShamiModelOutput]:
-       pass
+        transformer_outputs = self.lm_model(
+            input_ids=input_ids,
+            inputs_embeds=inputs_embeds,
+            past_key_values=None,
+            attention_mask=attention_mask,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            use_cache=None,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        # (batch_size, sequence_length, hidden_size)
+        hidden_states = transformer_outputs.last_hidden_state
+        # (batch_size, sequence_length, vocab_size)
+        lm_logits = self.lm_head(hidden_states)
+        return lm_logits
