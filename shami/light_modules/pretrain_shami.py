@@ -80,10 +80,10 @@ class PretrainShami(pl.LightningModule):
     def configure_optimizers(self):
         self.optim = torch.optim.AdamW(
             self.net.parameters(), 
-            self.hparams.params.train.learning_rate, 
-            betas=self.hparams.params.train.betas, 
-            eps=self.hparams.params.train.eps)
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=self.hparams.params.train.lr_decay)
+            self.hparams.params.learning_rate, 
+            betas=self.hparams.params.betas, 
+            eps=self.hparams.params.eps)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=self.hparams.params.lr_decay)
         self.scheduler.last_epoch = self.current_epoch - 1
 
         return [self.optim], [self.scheduler]

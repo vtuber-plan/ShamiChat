@@ -1,11 +1,12 @@
 {
-    "train" : {
-        "learning_rate": 1e-4,
-        "betas": [0.8, 0.99],
-        "eps": 1e-9,
-        "lr_decay": 0.999875,
-        "fp16": true,
-        "bf16": false,
-        "max_epochs": 1000
-    }
+    "seed": 43,
+    "batch_size": 8,
+    "valid_batch_size": 8,
+    "learning_rate": 1e-4,
+    "betas": [0.8, 0.99],
+    "eps": 1e-9,
+    "lr_decay": 0.999875,
+    "fp16": false,
+    "bf16": true,
+    "max_epochs": 1000
 }

@@ -32,7 +32,7 @@ class JsonlDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         text = self.data[index]
-        out = self.tokenizer(text)
+        out = self.tokenizer(text, truncation=True)
         return out
 
     def __len__(self):
