@@ -21,6 +21,7 @@ from transformers import (
     MinLengthLogitsProcessor,
     StoppingCriteriaList,
     MaxLengthCriteria,
+    BeamSearchScorer,
 )
 
 
@@ -37,20 +38,11 @@ model = model.to(device)
 
 hparams = model.hparams
 
-inputs = tokenizer(["我是一个人工智能机器人"], return_tensors="pt").to(device)
+inputs = tokenizer(["夏之幻想是谁？"], return_tensors="pt").to(device)
 input_ids = inputs["input_ids"]
 
-# instantiate logits processors
-logits_processor = LogitsProcessorList(
-    [
-        MinLengthLogitsProcessor(10, eos_token_id=model.net.generation_config.eos_token_id),
-    ]
-)
-stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=60)])
 
-outputs = model.net.greedy_search(
-    input_ids, logits_processor=logits_processor, stopping_criteria=stopping_criteria
-)
-
+outputs = model.net.generate(**inputs, penalty_alpha=0.6, top_k=4, max_new_tokens=100)
+# outputs = model.net.generate(**inputs, num_beams=5, max_new_tokens=50)
 out_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 print(out_text)
