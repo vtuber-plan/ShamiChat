@@ -11,6 +11,7 @@ import json
 import glob
 import argparse
 import platform
+os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = 'true'
 
 import tqdm
 
@@ -30,6 +31,7 @@ from shami.hparams import HParams
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.strategies import DDPStrategy
 # from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
 
@@ -42,7 +44,7 @@ def main():
     parser.add_argument('-c', '--config', type=str, default="./checkpoints/Shami-base/config.json", help='JSON file for configuration')
     parser.add_argument('-p', '--params', type=str, default="./configs/shami-base.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="0,1", help='training device ids')
+    parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/Shami-base", help='checkpoint path')
     args = parser.parse_args()
 
@@ -51,17 +53,22 @@ def main():
 
     lightning_fabric.utilities.seed.seed_everything(hparams.seed)
 
-    tokenizer = ShamiTokenizer.from_pretrained(args.checkpoint)
+    tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
 
-    train_dataset = JsonlDataset(tokenizer, "./dataset/test.jsonl")
-    valid_dataset = JsonlDataset(tokenizer, "./dataset/test.jsonl")
+    train_dataset = JsonlDataset(tokenizer, "./dataset/train.jsonl")
+    valid_dataset = JsonlDataset(tokenizer, "./dataset/valid.jsonl")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
-    train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4, shuffle=True, pin_memory=True, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=8, shuffle=False, pin_memory=True, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=hparams.valid_batch_size, num_workers=4, shuffle=False, pin_memory=True, collate_fn=collate_fn)
 
     model = PretrainShami(config, hparams)
-    checkpoint_callback = ModelCheckpoint(dirpath=None, save_last=True, every_n_train_steps=2000)
+
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=None, save_last=True, every_n_train_steps=2000, save_weights_only=False,
+        monitor="val_loss", mode="min", save_top_k=5
+    )
+    # earlystop_callback = EarlyStopping(monitor="valid/loss_mel_epoch", mode="min", patience=13)
 
     devices = [int(n.strip()) for n in args.device.split(",")]
     trainer_params = {
@@ -77,7 +84,7 @@ def main():
             backend = "gloo"
         else:
             backend = "nccl"
-        ddp = DDPStrategy(process_group_backend=backend)
+        ddp = DDPStrategy(process_group_backend=backend, find_unused_parameters=True)
         trainer_params["strategy"] = ddp
 
     if hparams.fp16:
@@ -87,7 +94,10 @@ def main():
         print("using bf16")
         trainer_params["precision"] = "bf16-mixed"
     
-    trainer_params["max_epochs"] = hparams["max_epochs"]
+    if "max_epochs" in hparams:
+        trainer_params["max_epochs"] = hparams["max_epochs"]
+    if "accumulate_grad_batches" in hparams:
+        trainer_params["accumulate_grad_batches"] = hparams["accumulate_grad_batches"]
     # profiler = AdvancedProfiler(filename="profile.txt")
     
     trainer = pl.Trainer(**trainer_params) # , profiler=profiler, max_steps=200

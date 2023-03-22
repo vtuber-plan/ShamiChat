@@ -28,12 +28,14 @@ class PretrainShami(pl.LightningModule):
         input_ids, input_mask = tokens["input_ids"], tokens["attention_mask"]
         batch_size = input_ids.shape[0]
 
-        lm_logits = self.net(
+        lm_output = self.net(
             input_ids=input_ids,
             attention_mask=input_mask,
+            labels=input_ids,
             use_cache=False,
+            return_dict=True,
         )
-        return lm_logits
+        return lm_output
 
     def training_step(self, batch, batch_idx: int):
         input_ids, input_mask = batch["input_ids"], batch["attention_mask"]
@@ -44,15 +46,9 @@ class PretrainShami(pl.LightningModule):
             'attention_mask': input_mask[..., :-1]
         }
 
-        lm_logits = self.forward(
-            tokens=source_tokens,
-        )
-
-        shift_label_ids = input_ids[..., 1:].contiguous()
-
-        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
-        loss = loss_fct(lm_logits.view(-1, self.vocab_size), shift_label_ids.view(-1))
-
+        lm_output = self.forward(tokens=source_tokens)
+        loss = lm_output[0]
+        
         # Logging to TensorBoard by default
         self.log('train_loss', loss)
         return loss
@@ -66,14 +62,9 @@ class PretrainShami(pl.LightningModule):
             'attention_mask': input_mask[..., :-1]
         }
 
-        lm_logits = self.forward(
-            tokens=source_tokens
-        )
+        lm_output = self.forward(tokens=source_tokens)
+        loss = lm_output.loss
 
-        shift_label_ids = input_ids[..., 1:].contiguous()
-
-        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
-        loss = loss_fct(lm_logits.view(-1, self.vocab_size), shift_label_ids.view(-1))
         self.log('val_loss', loss)
 
     

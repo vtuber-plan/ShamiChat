@@ -22,6 +22,13 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPastAndCrossAttentions,
+    CausalLMOutputWithCrossAttentions,
+    CausalLMOutput,
+    SequenceClassifierOutputWithPast,
+    TokenClassifierOutput,
+)
 from .configuration_shami import ShamiConfig
 
 
@@ -170,7 +177,18 @@ class ShamiLayer(nn.Module):
         return out
 
 
-class ShamiModel(PreTrainedModel):
+class ShamiPreTrainedModel(PreTrainedModel):
+    config_class = ShamiConfig
+    base_model_prefix = "transformer"
+    # is_parallelizable = True
+    # supports_gradient_checkpointing = True
+    _no_split_modules = ["ShamiLayer"]
+
+    def __init__(self, config: ShamiConfig):
+        super().__init__(config)
+
+
+class ShamiModel(ShamiPreTrainedModel):
     def __init__(self, config: ShamiConfig):
         super().__init__(config)
 
@@ -250,13 +268,57 @@ class ShamiModel(PreTrainedModel):
         )
 
 
-class ShamiLMHeadModel(ShamiModel):
+class ShamiLMHeadModel(ShamiPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"lm_loss.weight"]
 
     def __init__(self, config):
         super().__init__(config)
         self.lm_model = ShamiModel(config=config)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=True)
+    
+    def prepare_inputs_for_generation(
+            self,
+            input_ids: torch.LongTensor,
+            past_key_values: Optional[torch.Tensor] = None,
+            inputs_embeds: Optional[torch.Tensor] = None,
+            **kwargs
+        ) -> dict:
+
+        token_type_ids = kwargs.get("token_type_ids", None)
+        # only last token for inputs_ids if past is defined in kwargs
+        if past_key_values:
+            input_ids = input_ids[:, -1].unsqueeze(-1)
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
+
+        attention_mask = kwargs.get("attention_mask", None)
+        position_ids = kwargs.get("position_ids", None)
+
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if past_key_values:
+                position_ids = position_ids[:, -1].unsqueeze(-1)
+        else:
+            position_ids = None
+
+        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+        model_inputs.update(
+            {
+                "past_key_values": past_key_values,
+                "use_cache": kwargs.get("use_cache"),
+                "position_ids": position_ids,
+                "attention_mask": attention_mask,
+                "token_type_ids": token_type_ids,
+            }
+        )
+        return model_inputs
 
     def forward(
         self,
@@ -287,4 +349,23 @@ class ShamiLMHeadModel(ShamiModel):
         hidden_states = transformer_outputs.last_hidden_state
         # (batch_size, sequence_length, vocab_size)
         lm_logits = self.lm_head(hidden_states)
-        return lm_logits
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+        if not return_dict:
+            output = (lm_logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return CausalLMOutput(
+            loss=loss,
+            logits=lm_logits,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions
+        )
