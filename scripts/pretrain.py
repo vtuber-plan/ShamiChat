@@ -42,7 +42,7 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorWithPaddin
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', type=str, default="./checkpoints/Shami-base/config.json", help='JSON file for configuration')
-    parser.add_argument('-p', '--params', type=str, default="./configs/shami-base.json", help='JSON file for params')
+    parser.add_argument('-p', '--params', type=str, default="./configs/shami-base-pretrain.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
     parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/Shami-base", help='checkpoint path')
@@ -55,8 +55,8 @@ def main():
 
     tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
 
-    train_dataset = JsonlDataset(tokenizer, "./dataset/train.jsonl")
-    valid_dataset = JsonlDataset(tokenizer, "./dataset/valid.jsonl")
+    train_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/train")
+    valid_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/valid")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
     train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=8, shuffle=False, pin_memory=True, collate_fn=collate_fn)

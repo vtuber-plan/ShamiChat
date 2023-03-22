@@ -131,4 +131,3 @@ dmypy.json
 checkpoints/
 dataset/
 lightning_logs/
-dataset_temp/

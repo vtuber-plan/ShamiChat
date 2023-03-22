@@ -38,11 +38,11 @@ model = model.to(device)
 
 hparams = model.hparams
 
-inputs = tokenizer(["夏之幻想是谁？"], return_tensors="pt").to(device)
+inputs = tokenizer(["北京大学是"], return_tensors="pt").to(device)
 input_ids = inputs["input_ids"]
 
 
-outputs = model.net.generate(**inputs, penalty_alpha=0.6, top_k=4, max_new_tokens=100)
-# outputs = model.net.generate(**inputs, num_beams=5, max_new_tokens=50)
+# outputs = model.net.generate(**inputs, penalty_alpha=0.4, top_k=4, max_new_tokens=100)
+outputs = model.net.generate(**inputs, num_beams=5, max_new_tokens=50)
 out_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 print(out_text)

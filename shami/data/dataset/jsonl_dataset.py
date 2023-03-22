@@ -45,12 +45,13 @@ def read_gz_dataset(path: str):
     return dataset
 
 class JsonlDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer, path: str, model_max_length: int=int(1e30)) -> None:
+    def __init__(self, tokenizer, dir_path: str, model_max_length: int=int(1e30)) -> None:
         self.tokenizer = tokenizer
-        self.path = path
+        self.dir_path = dir_path
+        self.files_path = list(glob.glob(os.path.join(self.dir_path, "*.jsonl")))
         self.model_max_length = model_max_length
 
-        self.temp_file = "./dataset_temp"
+        self.temp_file = os.path.join(dir_path, "dataset_cache")
 
         self.data_path = []
         self.chunk_size = 10000
@@ -59,34 +60,41 @@ class JsonlDataset(torch.utils.data.Dataset):
     
     def write_cache(self, cache_path: str):
         if os.path.exists(cache_path):
+            print(f"Cache detected: {cache_path}")
             file_path = os.path.join(self.temp_file, f'*.jsonl.gz')
             self.data_path = sorted(list(glob.glob(file_path)))
             return
         else:
+            print(f"Caching dataset: {cache_path}")
             os.makedirs(cache_path)
             chunk_data = []
             chunk_id = 0
-            with open(self.path, "r", encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    obj = json.loads(line)
-                    if len(obj["text"]) < 64:
-                        continue
-                    
-                    text = obj["text"]
-                    if len(obj["text"]) > 8192:
-                        chunks, chunk_size = len(text), 8192
-                        text_pieces = [ text[i:i+chunk_size] for i in range(0, chunks, chunk_size) ]
-                    else:
-                        text_pieces = [text]
+            for filepath in self.files_path:
+                print(filepath)
+                num_lines = sum(1 for line in open(filepath, "r", encoding="utf-8"))
+                with open(filepath, "r", encoding="utf-8") as f:
+                    for i, line in enumerate(tqdm.tqdm(f, total=num_lines)):
+                        obj = json.loads(line)
+                        if len(obj["text"].strip()) == 0:
+                            continue
+                        if len(obj["text"]) < 64:
+                            continue
+                        
+                        text = obj["text"]
+                        if len(obj["text"]) > 8192:
+                            chunks, chunk_size = len(text), 8192
+                            text_pieces = [ text[i:i+chunk_size] for i in range(0, chunks, chunk_size) ]
+                        else:
+                            text_pieces = [text]
 
-                    for text_piece in text_pieces:
-                        chunk_data.append({"text": text_piece})
-                        if len(chunk_data) >= self.chunk_size:
-                            file_path = os.path.join(self.temp_file, f'{chunk_id:06d}.jsonl.gz')
-                            write_gz_dataset(file_path, chunk_data)
-                            self.data_path.append(file_path)
-                            chunk_data = []
-                            chunk_id += 1
+                        for text_piece in text_pieces:
+                            chunk_data.append({"text": text_piece})
+                            if len(chunk_data) >= self.chunk_size:
+                                file_path = os.path.join(self.temp_file, f'{chunk_id:06d}.jsonl.gz')
+                                write_gz_dataset(file_path, chunk_data)
+                                self.data_path.append(file_path)
+                                chunk_data = []
+                                chunk_id += 1
 
             file_path = os.path.join(self.temp_file, f'{chunk_id:06d}.jsonl.gz')
             write_gz_dataset(file_path, chunk_data)
