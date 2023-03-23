@@ -18,12 +18,14 @@ import random
 import gzip
 import functools
 
+CACHE_SIZE = 64
+
 def write_dataset(path: str, dataset: List[Dict]):
     with open(path, "w", encoding="utf-8") as f:
         for data in dataset:
             f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
-@functools.lru_cache(maxsize=64, typed=False)
+@functools.lru_cache(maxsize=CACHE_SIZE, typed=False)
 def read_dataset(path: str):
     dataset = []
     with open(path, "r", encoding="utf-8") as f:
@@ -36,7 +38,7 @@ def write_gz_dataset(path: str, dataset: List[Dict]):
         for data in dataset:
             f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
-@functools.lru_cache(maxsize=64, typed=False)
+@functools.lru_cache(maxsize=CACHE_SIZE, typed=False)
 def read_gz_dataset(path: str):
     dataset = []
     with gzip.open(path, "rt", encoding="utf-8") as f:
@@ -57,6 +59,7 @@ class JsonlDataset(torch.utils.data.Dataset):
         self.chunk_size = 10000
         self.write_cache(self.temp_file)
         self.total_num = (len(self.data_path) - 1) * self.chunk_size + len(read_gz_dataset(self.data_path[-1]))
+        random.seed(43)
     
     def write_cache(self, cache_path: str):
         if os.path.exists(cache_path):

@@ -70,7 +70,7 @@ class PretrainShami(pl.LightningModule):
     
     def configure_optimizers(self):
         self.optim = torch.optim.AdamW(
-            self.net.parameters(), 
+            self.trainer.model.parameters(), 
             self.hparams.params.learning_rate, 
             betas=self.hparams.params.betas, 
             eps=self.hparams.params.eps)

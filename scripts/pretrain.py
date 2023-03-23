@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader
 torch.set_float32_matmul_precision('medium')
 
 from shami.light_modules.pretrain_shami import PretrainShami
+from shami.model.modeling_shami import ShamiLayer
 from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 from shami.model.tokenization_shami import ShamiTokenizer
@@ -32,7 +33,7 @@ from shami.hparams import HParams
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.strategies import DDPStrategy
+from pytorch_lightning.strategies import DDPStrategy, FSDPStrategy
 # from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
 
 import lightning_fabric
@@ -59,15 +60,15 @@ def main():
     valid_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/valid")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
-    train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=8, shuffle=False, pin_memory=True, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=8, shuffle=True, pin_memory=True, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=hparams.valid_batch_size, num_workers=4, shuffle=False, pin_memory=True, collate_fn=collate_fn)
 
     model = PretrainShami(config, hparams)
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=None, save_last=True, every_n_train_steps=2000, save_weights_only=False,
-        monitor="val_loss", mode="min", save_top_k=5
     )
+    # monitor="val_loss", mode="min", save_top_k=5
     # earlystop_callback = EarlyStopping(monitor="valid/loss_mel_epoch", mode="min", patience=13)
 
     devices = [int(n.strip()) for n in args.device.split(",")]
@@ -79,11 +80,21 @@ def main():
     if args.accelerator != "cpu":
         trainer_params["devices"] = devices
 
-    if len(devices) > 1:
-        if platform.system().lower() == 'windows':
-            backend = "gloo"
-        else:
-            backend = "nccl"
+    if platform.system().lower() == 'windows':
+        backend = "gloo"
+    else:
+        backend = "nccl"
+    if "strategy" in hparams:
+        if hparams.strategy == "fsdp":
+            fsdp = FSDPStrategy(
+                activation_checkpointing=ShamiLayer,  # or pass a list with multiple types
+                process_group_backend=backend
+            )
+            trainer_params["strategy"] = fsdp
+        elif hparams.strategy == "ddp":
+            ddp = DDPStrategy(process_group_backend=backend, find_unused_parameters=True)
+            trainer_params["strategy"] = ddp
+    elif len(devices) > 1:
         ddp = DDPStrategy(process_group_backend=backend, find_unused_parameters=True)
         trainer_params["strategy"] = ddp
 
