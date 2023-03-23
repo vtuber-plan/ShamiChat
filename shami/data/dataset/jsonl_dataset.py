@@ -18,7 +18,7 @@ import random
 import gzip
 import functools
 
-CACHE_SIZE = 64
+CACHE_SIZE = 4
 
 def write_dataset(path: str, dataset: List[Dict]):
     with open(path, "w", encoding="utf-8") as f:
