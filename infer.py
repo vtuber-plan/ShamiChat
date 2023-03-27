@@ -26,23 +26,29 @@ from transformers import (
 
 
 if torch.cuda.is_available():
-    device = "cuda:0"
+    device = "cpu"
 else:
     device = "cpu"
 
-config = ShamiConfig.from_json_file("checkpoints/shami-base/config.json")
-tokenizer = ShamiTokenizer.from_pretrained("checkpoints/shami-base")
+config = ShamiConfig.from_json_file("checkpoints/shami-small/config.json")
+tokenizer = ShamiTokenizer.from_pretrained("checkpoints/shami-small")
 model = PretrainShami.load_from_checkpoint(PATH, config=config)
 model.eval()
 model = model.to(device)
 
 hparams = model.hparams
 
-inputs = tokenizer(["床前明月光"], return_tensors="pt").to(device)
+inputs = tokenizer(["请问答社区上"], return_tensors="pt").to(device)
 input_ids = inputs["input_ids"]
 
 
-outputs = model.net.generate(**inputs, penalty_alpha=0.4, top_k=4, max_new_tokens=100)
+outputs = model.net.generate(**inputs, penalty_alpha=0.6, top_k=4, max_new_tokens=100)
 # outputs = model.net.generate(**inputs, num_beams=5, max_new_tokens=50)
 out_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 print(out_text)
+
+# ipmitool -I lanplus -H 114.212.81.248 -U root -P calvin sensor reading "Ambient Temp" "FAN 1 RPM" "FAN 2 RPM" "FAN 3 RPM"
+# ipmitool -I lanplus -H 114.212.81.248 -U root -P calvin sdr get "FAN 1 RPM" "FAN 2 RPM" "FAN 3 RPM"
+# ipmitool -I lanplus -H 114.212.81.248 -U root -P calvin raw 0x30 0x30 0x01 0x00
+# ipmitool -I lanplus -H 114.212.81.248 -U root -P calvin raw 0x30 0x30 0x02 0xff 0x00
+# ipmitool -I lanplus -U root -P calvin -H 114.212.81.248 raw 0x30 0x30 0x02 0xff 0x18

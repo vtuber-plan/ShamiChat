@@ -27,7 +27,7 @@ from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 from shami.model.tokenization_shami import ShamiTokenizer
 
-from shami.data.dataset.jsonl_dataset import JsonlDataset
+from shami.data.dataset.pretrain_dataset import PretrainDataset
 from shami.hparams import HParams
 
 import pytorch_lightning as pl
@@ -45,7 +45,7 @@ def main():
     parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-small/config.json", help='JSON file for configuration')
     parser.add_argument('-p', '--params', type=str, default="./params/shami-small-pretrain.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
+    parser.add_argument('-d', '--device', type=str, default="0", help='training device ids')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-small", help='checkpoint path')
     args = parser.parse_args()
 
@@ -56,8 +56,8 @@ def main():
 
     tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
 
-    train_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/train", zip="gz")
-    valid_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/valid", zip="gz")
+    train_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/train", zip="gz")
+    valid_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/valid", zip="gz")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
     train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4, shuffle=True, pin_memory=True, collate_fn=collate_fn, prefetch_factor=2)

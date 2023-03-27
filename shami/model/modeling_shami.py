@@ -38,6 +38,7 @@ logger = logging.get_logger(__name__)
 
 
 SHAMI_PRETRAINED_MODEL_ARCHIVE_LIST = [
+    "shami-small",
     "shami-base",
     "shami-large",
 ]
@@ -113,7 +114,7 @@ class ShamiAttention(nn.Module):
     def forward(self,
                 x: torch.Tensor,
                 freqs_cis: torch.Tensor,
-                mask: Optional[torch.Tensor],
+                attention_mask: Optional[torch.Tensor],
                 layer_past: Optional[torch.Tensor] = None,
                 use_cache: Optional[bool] = False
             ):
@@ -143,6 +144,15 @@ class ShamiAttention(nn.Module):
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
         scores = torch.matmul(xq, key.transpose(2, 3)) / math.sqrt(self.head_dim)
+        
+        mask = None
+        if seqlen > 1:
+            query_length, key_length = xq.size(-3), key.size(-3)
+            causal_mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=x.device)
+            causal_mask = torch.triu(causal_mask, diagonal=key_length - query_length + 1).type_as(x)
+
+            mask = causal_mask
+
         if mask is not None:
             scores = scores + mask  # (bs, n_local_heads, slen, cache_len + slen)
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
@@ -187,7 +197,7 @@ class ShamiLayer(nn.Module):
     def forward(self,
             hidden_states: torch.Tensor,
             freqs_cis: torch.Tensor,
-            mask: Optional[torch.Tensor],
+            attention_mask: Optional[torch.Tensor],
             layer_past: Optional[torch.Tensor] = None,
             use_cache: Optional[bool] = False
         ):
@@ -196,7 +206,7 @@ class ShamiLayer(nn.Module):
         attention_out = self.attention.forward(
             x=hidden_states,
             freqs_cis=freqs_cis,
-            mask=mask,
+            attention_mask=attention_mask,
             layer_past=layer_past,
             use_cache=use_cache
         )
@@ -294,11 +304,6 @@ class ShamiModel(ShamiPreTrainedModel):
         freqs_cis = self.freqs_cis_device_mapping[hidden_states.device]
         freqs_cis = freqs_cis[start_pos: start_pos + seqlen]
 
-        mask = None
-        if seqlen > 1:
-            mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=inputs_embeds.device)
-            mask = torch.triu(mask, diagonal=start_pos + 1).type_as(hidden_states)
-
         # layer forward
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
@@ -311,7 +316,7 @@ class ShamiModel(ShamiPreTrainedModel):
                 hidden_states=hidden_states,
                 layer_past=layer_past,
                 freqs_cis=freqs_cis,
-                mask=mask,
+                attention_mask=attention_mask,
                 use_cache=use_cache
             )
 
@@ -343,24 +348,9 @@ class ShamiLMHeadModel(ShamiPreTrainedModel):
             **kwargs
         ) -> dict:
 
-        token_type_ids = kwargs.get("token_type_ids", None)
         # only last token for inputs_ids if past is defined in kwargs
         if past_key_values:
             input_ids = input_ids[:, -1].unsqueeze(-1)
-            if token_type_ids is not None:
-                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
-
-        attention_mask = kwargs.get("attention_mask", None)
-        position_ids = kwargs.get("position_ids", None)
-
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -1].unsqueeze(-1)
-        else:
-            position_ids = None
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and past_key_values is None:
@@ -371,10 +361,7 @@ class ShamiLMHeadModel(ShamiPreTrainedModel):
         model_inputs.update(
             {
                 "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "position_ids": position_ids,
-                "attention_mask": attention_mask,
-                "token_type_ids": token_type_ids,
+                "use_cache": kwargs.get("use_cache")
             }
         )
         return model_inputs

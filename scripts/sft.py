@@ -27,7 +27,7 @@ from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 from shami.model.tokenization_shami import ShamiTokenizer
 
-from shami.data.dataset.jsonl_dataset import JsonlDataset
+from shami.data.dataset.pretrain_dataset import JsonlDataset
 from shami.hparams import HParams
 
 import pytorch_lightning as pl
