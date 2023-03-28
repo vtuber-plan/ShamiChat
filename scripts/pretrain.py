@@ -45,7 +45,7 @@ def main():
     parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-1.3B/config.json", help='JSON file for configuration')
     parser.add_argument('-p', '--params', type=str, default="./params/shami-1.3B-pretrain.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="4,5", help='training device ids')
+    parser.add_argument('-d', '--device', type=str, default="0,1,2,3", help='training device ids')
     parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-1.3B", help='checkpoint path')
     args = parser.parse_args()
 
@@ -66,7 +66,7 @@ def main():
     model = PretrainShami(config, hparams)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=None, save_last=True, every_n_train_steps=2000, save_weights_only=False,
+        dirpath=None, save_last=True, every_n_train_steps=1, save_weights_only=False,
     )
     # monitor="val_loss", mode="min", save_top_k=5
     # earlystop_callback = EarlyStopping(monitor="valid/loss_mel_epoch", mode="min", patience=13)
