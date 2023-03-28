@@ -28,6 +28,7 @@ class ShamiConfig(PretrainedConfig):
         d_model: int,
         n_layers: int,
         n_heads: int,
+        d_head: int,
         vocab_size: int,
         multiple_of: int,
         norm_eps: float,
@@ -41,6 +42,7 @@ class ShamiConfig(PretrainedConfig):
         self.d_model = d_model
         self.n_layers = n_layers
         self.n_heads = n_heads
+        self.d_head = d_head
         self.vocab_size = vocab_size
         self.multiple_of = multiple_of
         self.norm_eps = norm_eps

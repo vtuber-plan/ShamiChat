@@ -104,12 +104,12 @@ class ShamiAttention(nn.Module):
     def __init__(self, config: ShamiConfig):
         super().__init__()
         self.n_heads = config.n_heads
-        self.head_dim = config.d_model // config.n_heads
+        self.d_head = config.d_head
 
-        self.wq = nn.Linear(config.d_model, config.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(config.d_model, config.n_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(config.d_model, config.n_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(config.n_heads * self.head_dim, config.d_model, bias=False)
+        self.wq = nn.Linear(config.d_model, config.n_heads * self.d_head, bias=False)
+        self.wk = nn.Linear(config.d_model, config.n_heads * self.d_head, bias=False)
+        self.wv = nn.Linear(config.d_model, config.n_heads * self.d_head, bias=False)
+        self.wo = nn.Linear(config.n_heads * self.d_head, config.d_model, bias=False)
 
     def forward(self,
                 x: torch.Tensor,
@@ -121,9 +121,9 @@ class ShamiAttention(nn.Module):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
-        xq = xq.view(bsz, seqlen, self.n_heads, self.head_dim)
-        xk = xk.view(bsz, seqlen, self.n_heads, self.head_dim)
-        xv = xv.view(bsz, seqlen, self.n_heads, self.head_dim)
+        xq = xq.view(bsz, seqlen, self.n_heads, self.d_head)
+        xk = xk.view(bsz, seqlen, self.n_heads, self.d_head)
+        xv = xv.view(bsz, seqlen, self.n_heads, self.d_head)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
@@ -143,7 +143,7 @@ class ShamiAttention(nn.Module):
         xq = xq.transpose(1, 2)
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
-        scores = torch.matmul(xq, key.transpose(2, 3)) / math.sqrt(self.head_dim)
+        scores = torch.matmul(xq, key.transpose(2, 3)) / math.sqrt(self.d_head)
         
         mask = None
         if seqlen > 1:
@@ -187,7 +187,7 @@ class ShamiLayer(nn.Module):
         super().__init__()
         self.n_heads = config.n_heads
         self.d_model = config.d_model
-        self.head_dim = config.d_model // config.n_heads
+        self.d_head = config.d_head
         self.attention = ShamiAttention(config)
         self.feed_forward = ShamiFeedForward(config)
         self.layer_id = layer_id
@@ -247,6 +247,7 @@ class ShamiModel(ShamiPreTrainedModel):
         self.d_model: int = config.d_model
         self.n_layers: int = config.n_layers
         self.n_heads: int = config.n_heads
+        self.d_head: int = config.d_head
         self.vocab_size: int = config.vocab_size  # defined later by tokenizer
         self.multiple_of: int = config.multiple_of  # make SwiGLU hidden layer size multiple of large power of 2
         self.norm_eps: float = config.norm_eps
@@ -261,7 +262,7 @@ class ShamiModel(ShamiPreTrainedModel):
         self.norm = RMSNorm(self.d_model, eps=self.norm_eps)
 
         self.freqs_cis = precompute_freqs_cis(
-            self.d_model // self.n_heads, self.max_seq_len * 2
+            self.d_head, self.max_seq_len * 2
         )
         self.freqs_cis_device_mapping = {}
 

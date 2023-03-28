@@ -33,7 +33,7 @@ from shami.hparams import HParams
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.strategies import DDPStrategy, FSDPStrategy
+from pytorch_lightning.strategies import DDPStrategy
 # from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
 
 import lightning_fabric
@@ -42,11 +42,11 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorWithPaddin
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-small/config.json", help='JSON file for configuration')
-    parser.add_argument('-p', '--params', type=str, default="./params/shami-small-pretrain.json", help='JSON file for params')
+    parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-1.3B/config.json", help='JSON file for configuration')
+    parser.add_argument('-p', '--params', type=str, default="./params/shami-1.3B-pretrain.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="0", help='training device ids')
-    parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-small", help='checkpoint path')
+    parser.add_argument('-d', '--device', type=str, default="4,5", help='training device ids')
+    parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-1.3B", help='checkpoint path')
     args = parser.parse_args()
 
     config = ShamiConfig.from_json_file(args.config)
@@ -86,6 +86,7 @@ def main():
         backend = "nccl"
     if "strategy" in hparams:
         if hparams.strategy == "fsdp":
+            from pytorch_lightning.strategies import FSDPStrategy
             fsdp = FSDPStrategy(
                 activation_checkpointing=ShamiLayer,  # or pass a list with multiple types
                 process_group_backend=backend

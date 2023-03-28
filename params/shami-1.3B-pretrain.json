@@ -10,5 +10,5 @@
     "fp16": false,
     "bf16": true,
     "max_epochs": 100,
-    "strategy": "dp"
+    "strategy": "fsdp"
 }
