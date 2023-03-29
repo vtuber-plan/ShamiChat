@@ -71,25 +71,13 @@ class PretrainShami(pl.LightningModule):
 
     
     def configure_optimizers(self):
-        self.optim = torch.optim.AdamW(
+        self.optim = torch.optim.Adam(
             self.trainer.model.parameters(), 
             self.hparams.params.learning_rate, 
             betas=self.hparams.params.betas, 
-            eps=self.hparams.params.eps)
+            eps=self.hparams.params.eps
+        )
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=self.hparams.params.lr_decay)
         self.scheduler.last_epoch = self.current_epoch - 1
 
         return [self.optim], [self.scheduler]
-
-
-    def lightning_module_state_dict(self) -> Dict[str, Any]:
-        """
-        Returns model state.
-        Workaround because pl bug: https://github.com/Lightning-AI/lightning/issues/16526
-        """
-        assert self.lightning_module.trainer.model is not None
-        model = self.lightning_module.trainer.model
-        full_state_dict_config = FullStateDictConfig(rank0_only=True)
-        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
-            wrapped_state_dict = model.state_dict()
-        return {k.replace("_forward_module.", ""): v for k, v in wrapped_state_dict}
