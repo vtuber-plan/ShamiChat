@@ -30,11 +30,11 @@ from shami.model.tokenization_shami import ShamiTokenizer
 from shami.data.dataset.pretrain_dataset import PretrainDataset
 from shami.hparams import HParams
 
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.strategies import DDPStrategy
-# from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.strategies import DDPStrategy
+# from lightning.pytorch.profiler import SimpleProfiler, AdvancedProfiler
 
 import lightning_fabric
 
@@ -56,8 +56,13 @@ def main():
 
     tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
 
-    train_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/train", zip="gz")
-    valid_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/valid", zip="gz")
+    if "sentence_max_length" in hparams:
+        sentence_max_length = hparams["sentence_max_length"]
+    else:
+        sentence_max_length = None
+
+    train_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/train", sentence_max_length, zip="gz")
+    valid_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/valid", sentence_max_length, zip="gz")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
     train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4, shuffle=True, pin_memory=True, collate_fn=collate_fn, prefetch_factor=2)
@@ -66,7 +71,7 @@ def main():
     model = PretrainShami(config, hparams)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=None, save_last=True, every_n_train_steps=1, save_weights_only=False,
+        dirpath=None, save_last=True, every_n_train_steps=100, save_weights_only=False, save_on_train_epoch_end=True
     )
     # monitor="val_loss", mode="min", save_top_k=5
     # earlystop_callback = EarlyStopping(monitor="valid/loss_mel_epoch", mode="min", patience=13)
@@ -86,12 +91,20 @@ def main():
         backend = "nccl"
     if "strategy" in hparams:
         if hparams.strategy == "fsdp":
-            from pytorch_lightning.strategies import FSDPStrategy
+            from lightning.pytorch.strategies import FSDPStrategy
             fsdp = FSDPStrategy(
+                cpu_offload=True,
                 activation_checkpointing=ShamiLayer,  # or pass a list with multiple types
                 process_group_backend=backend
             )
             trainer_params["strategy"] = fsdp
+        elif hparams.strategy == "deepspeed":
+            from lightning.pytorch.strategies import DeepSpeedStrategy
+            ds = DeepSpeedStrategy(
+                zero_optimization=True,
+                stage=3,
+            )
+            trainer_params["strategy"] = ds
         elif hparams.strategy == "ddp":
             ddp = DDPStrategy(process_group_backend=backend, find_unused_parameters=True)
             trainer_params["strategy"] = ddp

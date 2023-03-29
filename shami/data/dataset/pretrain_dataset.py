@@ -146,7 +146,7 @@ class PretrainDataset(torch.utils.data.Dataset):
         chunk = read_dataset(self.data_path[chunk_id])
         chunk_index = index % self.chunk_size
         text = chunk[chunk_index]["text"]
-        out = self.tokenizer(text, truncation=True)
+        out = self.tokenizer(text, truncation=True, max_length=self.model_max_length)
         return out
 
     def __len__(self):

@@ -1,12 +1,14 @@
 
 
 
-from typing import Dict
+from typing import Any, Dict
 import torch
 from torch import nn, optim
 from torch.nn import functional as F
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 
 from .. import hparams
 from ..model.configuration_shami import ShamiConfig
@@ -78,3 +80,16 @@ class PretrainShami(pl.LightningModule):
         self.scheduler.last_epoch = self.current_epoch - 1
 
         return [self.optim], [self.scheduler]
+
+
+    def lightning_module_state_dict(self) -> Dict[str, Any]:
+        """
+        Returns model state.
+        Workaround because pl bug: https://github.com/Lightning-AI/lightning/issues/16526
+        """
+        assert self.lightning_module.trainer.model is not None
+        model = self.lightning_module.trainer.model
+        full_state_dict_config = FullStateDictConfig(rank0_only=True)
+        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, full_state_dict_config):
+            wrapped_state_dict = model.state_dict()
+        return {k.replace("_forward_module.", ""): v for k, v in wrapped_state_dict}
