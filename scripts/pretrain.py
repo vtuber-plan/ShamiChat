@@ -138,4 +138,4 @@ def main():
     trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=valid_loader, ckpt_path=ckpt_path)
 
 if __name__ == "__main__":
-  main()
+    main()

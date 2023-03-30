@@ -5,7 +5,6 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
 )
 
-
 import os
 import json
 import glob
@@ -21,20 +20,20 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 torch.set_float32_matmul_precision('medium')
 
-from shami.light_modules.pretrain_shami import PretrainShami
+from shami.light_modules.sft_shami import SupervisedFineTuningShami
 from shami.model.modeling_shami import ShamiLayer
 from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 from shami.model.tokenization_shami import ShamiTokenizer
 
-from shami.data.dataset.pretrain_dataset import JsonlDataset
+from shami.data.dataset.pretrain_dataset import PretrainDataset
 from shami.hparams import HParams
 
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.strategies import DDPStrategy, FSDPStrategy
-# from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.strategies import DDPStrategy
+# from lightning.pytorch.profiler import SimpleProfiler, AdvancedProfiler
 
 import lightning_fabric
 
@@ -42,11 +41,11 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorWithPaddin
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', type=str, default="./checkpoints/Shami-base/config.json", help='JSON file for configuration')
-    parser.add_argument('-p', '--params', type=str, default="./configs/shami-base-pretrain.json", help='JSON file for params')
+    parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-1.3B/config.json", help='JSON file for configuration')
+    parser.add_argument('-p', '--params', type=str, default="./params/shami-1.3B-pretrain.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="1", help='training device ids')
-    parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/Shami-base", help='checkpoint path')
+    parser.add_argument('-d', '--device', type=str, default="0,1,2,3", help='training device ids')
+    parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-1.3B", help='checkpoint path')
     args = parser.parse_args()
 
     config = ShamiConfig.from_json_file(args.config)
@@ -56,17 +55,22 @@ def main():
 
     tokenizer = ShamiTokenizerFast.from_pretrained(args.checkpoint)
 
-    train_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/train")
-    valid_dataset = JsonlDataset(tokenizer, "./dataset/pretrain/valid")
+    if "sentence_max_length" in hparams:
+        sentence_max_length = hparams["sentence_max_length"]
+    else:
+        sentence_max_length = None
+
+    train_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/train", sentence_max_length, zip="gz")
+    valid_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/valid", sentence_max_length, zip="gz")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
-    train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=8, shuffle=False, pin_memory=True, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4, shuffle=True, pin_memory=True, collate_fn=collate_fn, prefetch_factor=2)
     valid_loader = DataLoader(valid_dataset, batch_size=hparams.valid_batch_size, num_workers=4, shuffle=False, pin_memory=True, collate_fn=collate_fn)
 
-    model = PretrainShami(config, hparams)
+    model = SupervisedFineTuningShami(config, hparams)
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=None, save_last=True, every_n_train_steps=2000, save_weights_only=False,
+        dirpath=None, save_last=True, every_n_train_steps=100, save_weights_only=False, save_on_train_epoch_end=True
     )
     # monitor="val_loss", mode="min", save_top_k=5
     # earlystop_callback = EarlyStopping(monitor="valid/loss_mel_epoch", mode="min", patience=13)
@@ -86,11 +90,20 @@ def main():
         backend = "nccl"
     if "strategy" in hparams:
         if hparams.strategy == "fsdp":
+            from lightning.pytorch.strategies import FSDPStrategy
             fsdp = FSDPStrategy(
+                cpu_offload=True,
                 activation_checkpointing=ShamiLayer,  # or pass a list with multiple types
                 process_group_backend=backend
             )
             trainer_params["strategy"] = fsdp
+        elif hparams.strategy == "deepspeed":
+            from lightning.pytorch.strategies import DeepSpeedStrategy
+            ds = DeepSpeedStrategy(
+                zero_optimization=True,
+                stage=3,
+            )
+            trainer_params["strategy"] = ds
         elif hparams.strategy == "ddp":
             ddp = DDPStrategy(process_group_backend=backend, find_unused_parameters=True)
             trainer_params["strategy"] = ddp
@@ -124,4 +137,4 @@ def main():
     trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=valid_loader, ckpt_path=ckpt_path)
 
 if __name__ == "__main__":
-  main()
+    main()
