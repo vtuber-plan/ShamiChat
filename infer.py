@@ -30,15 +30,15 @@ if torch.cuda.is_available():
 else:
     device = "cpu"
 
-config = ShamiConfig.from_json_file("checkpoints/shami-1.3B/config.json")
-tokenizer = ShamiTokenizer.from_pretrained("checkpoints/shami-1.3B")
+config = ShamiConfig.from_json_file("checkpoints/shami-large/config.json")
+tokenizer = ShamiTokenizer.from_pretrained("checkpoints/shami-large")
 model = PretrainShami.load_from_checkpoint(PATH, config=config)
 model.eval()
 model = model.to(device)
 
 hparams = model.hparams
 
-inputs = tokenizer(["静夜思，李白。"], return_tensors="pt").to(device)
+inputs = tokenizer(["什么是"], return_tensors="pt").to(device)
 input_ids = inputs["input_ids"]
 
 

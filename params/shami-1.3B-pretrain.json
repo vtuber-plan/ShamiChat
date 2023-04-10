@@ -1,8 +1,8 @@
 {
     "seed": 43,
-    "batch_size": 4,
+    "batch_size": 2,
     "valid_batch_size": 2,
-    "accumulate_grad_batches": 128,
+    "accumulate_grad_batches": 256,
     "learning_rate": 2e-4,
     "betas": [0.9, 0.95],
     "eps": 1e-9,

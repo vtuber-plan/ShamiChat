@@ -1,5 +1,6 @@
 import sys
 import os
+from typing import Tuple
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
@@ -40,13 +41,14 @@ import lightning_fabric
 
 from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-1.3B/config.json", help='JSON file for configuration')
-    parser.add_argument('-p', '--params', type=str, default="./params/shami-1.3B-pretrain.json", help='JSON file for params')
+    parser.add_argument('-c', '--config', type=str, default="./checkpoints/shami-large/config.json", help='JSON file for configuration')
+    parser.add_argument('-p', '--params', type=str, default="./params/shami-large-pretrain.json", help='JSON file for params')
     parser.add_argument('-a', '--accelerator', type=str, default="gpu", help='training device')
-    parser.add_argument('-d', '--device', type=str, default="0,1,2,3", help='training device ids')
-    parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-1.3B", help='checkpoint path')
+    parser.add_argument('-d', '--device', type=str, default="3,4,5,6", help='training device ids')
+    parser.add_argument('-cp', '--checkpoint', type=str, default="checkpoints/shami-large", help='checkpoint path')
     args = parser.parse_args()
 
     config = ShamiConfig.from_json_file(args.config)
@@ -93,7 +95,7 @@ def main():
         if hparams.strategy == "fsdp":
             from lightning.pytorch.strategies import FSDPStrategy
             fsdp = FSDPStrategy(
-                cpu_offload=True,
+                cpu_offload=False,
                 activation_checkpointing=ShamiLayer,  # or pass a list with multiple types
                 process_group_backend=backend
             )

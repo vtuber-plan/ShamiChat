@@ -62,7 +62,7 @@ def write_dataset(path: str, dataset: List[Dict]):
     else:
         raise Exception("Unsupported File Extension.")
 
-class PretrainDataset(torch.utils.data.Dataset):
+class InstructionDataset(torch.utils.data.Dataset):
     def __init__(self, tokenizer, dir_path: str, model_max_length: int=int(1e30), zip: Optional[str]=None) -> None:
         if zip is None:
             self.ext = "jsonl"

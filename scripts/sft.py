@@ -26,7 +26,7 @@ from shami.model.configuration_shami import ShamiConfig
 from shami.model.tokenization_shami_fast import ShamiTokenizerFast
 from shami.model.tokenization_shami import ShamiTokenizer
 
-from shami.data.dataset.pretrain_dataset import PretrainDataset
+from shami.data.dataset.instruction_dataset import InstructionDataset
 from shami.hparams import HParams
 
 import lightning.pytorch as pl
@@ -60,8 +60,8 @@ def main():
     else:
         sentence_max_length = None
 
-    train_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/train", sentence_max_length, zip="gz")
-    valid_dataset = PretrainDataset(tokenizer, "./dataset/pretrain/valid", sentence_max_length, zip="gz")
+    train_dataset = InstructionDataset(tokenizer, "./dataset/pretrain/train", sentence_max_length, zip="gz")
+    valid_dataset = InstructionDataset(tokenizer, "./dataset/pretrain/valid", sentence_max_length, zip="gz")
         
     collate_fn = DataCollatorWithPadding(tokenizer)
     train_loader = DataLoader(train_dataset, batch_size=hparams.batch_size, num_workers=4, shuffle=True, pin_memory=True, collate_fn=collate_fn, prefetch_factor=2)
